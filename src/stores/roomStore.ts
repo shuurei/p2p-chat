@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 
+export type Member = { userId: string; username: string }
+
 interface Room {
     id: string;
     name: string;
@@ -8,6 +10,7 @@ interface Room {
 
 export interface RoomStore {
     rooms: Room[];
+    members: Record<string, Member[]>;
     activeRoomId: string | null;
     typingByRoom: Record<string, string[]>
     addRoom: (room: Room) => void;
@@ -16,10 +19,13 @@ export interface RoomStore {
     setActiveRoom: (id: string) => void;
     setTyping: (roomId: string, username: string) => void;
     removeTyping: (roomId: string, username: string) => void;
+    addMember: (roomId: string, member: Member) => void;
+    removeMember: (roomId: string, userId: string) => void;
 }
 
 export const useRoomStore = create<RoomStore>((set) => ({
     rooms: [],
+    members: {},
     activeRoomId: null,
     typingByRoom: {},
     addRoom: (room) => {
@@ -54,5 +60,23 @@ export const useRoomStore = create<RoomStore>((set) => ({
                 [roomId]: (s.typingByRoom[roomId] ?? []).filter((u) => u !== username),
             },
         }));
+    },
+    addMember: (roomId, member) => set((state) => {
+        const existing = state.members[roomId] ?? []
+        if (existing.find((m) => m.userId === member.userId)) return state
+        return {
+            members: {
+                ...state.members,
+                [roomId]: [...existing, member]
+            }
+        }
+    }),
+    removeMember: (roomId, userId) => {
+        return set((s) => ({
+            members: {
+                ...s.members,
+                [roomId]: (s.members[roomId] ?? []).filter((m) => m.userId !== userId)
+            }
+        }))
     }
 }));

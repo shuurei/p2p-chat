@@ -7,6 +7,7 @@ import { useChatStore } from '../stores/chatStore'
 
 import MessageInput from './MessageInput'
 import { useClient } from '../contexts/ClientContext'
+import { getUserColor } from '../utils/colors'
 
 export default function ChatArea() {
     const { client } = useClient();
@@ -16,11 +17,12 @@ export default function ChatArea() {
 
     const { sendMessage, emitTyping } = useRoom()
     const { messages } = useChatStore()
-    const { rooms, activeRoomId, typingByRoom } = useRoomStore()
+    const { rooms, activeRoomId, typingByRoom, members } = useRoomStore()
 
     const activeRoom = rooms.find((r) => r.id === activeRoomId)
     const activeMessages = messages.filter((m) => m.roomId === activeRoomId)
     const activeTyping = (activeRoomId ? typingByRoom[activeRoomId] : null) ?? []
+    const activeMembers = (activeRoomId ? (members[activeRoomId] ?? []).filter((m) => m.userId !== client.id) : []);
 
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -60,6 +62,8 @@ export default function ChatArea() {
                 )}
                 {activeMessages.map((msg) => {
                     const isMine = msg.userId === client.id;
+                    const color = getUserColor(msg.userId);
+
                     return (
                         <div
                             key={msg.id}
@@ -69,7 +73,11 @@ export default function ChatArea() {
                                     ? 'bg-violet-600 text-white rounded-br-md'
                                     : 'bg-zinc-900 border border-zinc-800 rounded-bl-md'
                                 }`}>
-                                {!isMine && <div className="text-xs text-zinc-400 mb-1">{msg.username}</div>}
+                                {!isMine && (
+                                    <div className={`text-xs mb-1 ${color.text}`}>
+                                        {msg.username}
+                                    </div>
+                                )}
                                 <div>{msg.content}</div>
                             </div>
                         </div>
@@ -78,8 +86,21 @@ export default function ChatArea() {
                 <div ref={bottomRef} />
             </div>
 
+            {activeMembers.length > 0 && (
+                <div className='flex gap-2 text-xs py-2 px-3 bg-zinc-900'>
+                    {activeMembers.map((m) => {
+                        const color = getUserColor(m.userId);
+                        return (
+                            <span key={m.userId} className={`border-2 ${color.border} ${color.text} ${color.bg} rounded-lg px-2 py-1`}>
+                                {m.username}
+                            </span>
+                        )
+                    })}
+                </div>
+            )}
+
             {activeTyping.length > 0 && (
-                <div className="px-4 pb-2 text-sm text-zinc-400 flex items-center gap-2">
+                <div className="px-4 pb-2 text-sm text-zinc-400 flex items-center gap-2 bg-linear-to-b from-zinc-900 to-transparent">
                     <div className="flex gap-1">
                         {[0, 100, 200].map((delay) => (
                             <div
