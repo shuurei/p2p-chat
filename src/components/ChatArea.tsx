@@ -2,18 +2,19 @@ import { useEffect, useRef, useState } from 'react'
 
 import { useRoom } from '../contexts/RoomContext'
 
-import { useUserStore } from '../stores/userStore'
 import { useRoomStore } from '../stores/roomStore'
 import { useChatStore } from '../stores/chatStore'
 
 import MessageInput from './MessageInput'
+import { useClient } from '../contexts/ClientContext'
 
 export default function ChatArea() {
+    const { client } = useClient();
+
     const [copied, setCopied] = useState(false)
     const bottomRef = useRef<HTMLDivElement>(null)
 
     const { sendMessage, emitTyping } = useRoom()
-    const { username } = useUserStore()
     const { messages } = useChatStore()
     const { rooms, activeRoomId, typingByRoom } = useRoomStore()
 
@@ -58,17 +59,17 @@ export default function ChatArea() {
                     </div>
                 )}
                 {activeMessages.map((msg) => {
-                    const isMine = msg.author === username
+                    const isMine = msg.userId === client.id;
                     return (
                         <div
                             key={msg.id}
                             className={`flex ${isMine ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2`}
                         >
-                            <div className={`max-w-[70%] px-4 py-2 rounded-2xl text-sm shadow-md transition-all hover:scale-[1.01] ${isMine
+                            <div className={`max-w-[70%] px-4 py-2 rounded-2xl text-sm shadow-md transition-all ${isMine
                                     ? 'bg-violet-600 text-white rounded-br-md'
                                     : 'bg-zinc-900 border border-zinc-800 rounded-bl-md'
                                 }`}>
-                                {!isMine && <div className="text-xs text-zinc-400 mb-1">{msg.author}</div>}
+                                {!isMine && <div className="text-xs text-zinc-400 mb-1">{msg.username}</div>}
                                 <div>{msg.content}</div>
                             </div>
                         </div>
@@ -88,7 +89,7 @@ export default function ChatArea() {
                             />
                         ))}
                     </div>
-                    <span>{activeTyping.join(', ')} en train d'écrire…</span>
+                    <span>{activeTyping.length > 3 ? "Plusieurs personne sont en train d'écrire" : activeTyping.join(', ')} en train d'écrire…</span>
                 </div>
             )}
 
