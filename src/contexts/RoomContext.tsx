@@ -9,7 +9,8 @@ import { useUserStore } from '../stores/userStore'
 
 export type Message = {
     id: string;
-    author: string;
+    userId: string;
+    username: string;
     content: string;
     roomId: string;
 }
@@ -107,6 +108,8 @@ export const RoomProvider = ({ children }: { children: React.ReactNode }) => {
     const { client } = useClient()
 
     const joinRoom = (roomId: string) => {
+        if (useRoomStore.getState().rooms.find(({ id }) => id === roomId)) return;
+
         const room = client.connect(roomId);
 
         room.on('open', () => {
@@ -144,7 +147,8 @@ export const RoomProvider = ({ children }: { children: React.ReactNode }) => {
 
         const msg: Message = {
             id: crypto.randomUUID(),
-            author: username,
+            userId: client.id,
+            username,
             content,
             roomId: activeRoomId
         }
