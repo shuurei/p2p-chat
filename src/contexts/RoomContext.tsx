@@ -4,7 +4,7 @@ import Peer, { type DataConnection } from 'peerjs'
 import { useClient } from './ClientContext'
 
 import { useChatStore } from '../stores/chatStore'
-import { useRoomStore } from '../stores/roomStore'
+import { useRoomStore, type Member } from '../stores/roomStore'
 import { useUserStore } from '../stores/userStore'
 
 export type Message = {
@@ -20,7 +20,9 @@ export type Packet =
     | { type: 'typing'; payload: { username: string; roomId: string } }
     | { type: 'history-request'; payload: { roomId: string } }
     | { type: 'history'; payload: { messages: Message[]; roomId: string } }
-    | { type: 'room-info'; payload: { name: string } }
+    | { type: 'room-info'; payload: { name: string, members: Member[] } }
+    | { type: 'join'; payload: { userId: string; username: string } }
+    | { type: 'leave'; payload: { userId: string } }
 
 export interface RoomContextType {
     joinRoom: (roomId: string) => void;
@@ -31,6 +33,7 @@ export interface RoomContextType {
 
 const RoomContext = createContext<RoomContextType | null>(null);
 
+const connUsers = new Map<DataConnection, string>();
 const hostedPeers = new Map<string, Peer>()
 const roomConns = new Map<string, DataConnection[]>()
 const roomHistory = new Map<string, Message[]>()
@@ -51,57 +54,35 @@ const relay = (packet: Packet, roomId: string, exclude: DataConnection | null) =
 }
 
 const onPacket = (packet: Packet, roomId: string, from: DataConnection | null, isHost: boolean) => {
-    const { username } = useUserStore.getState()
     const { setTyping, removeTyping } = useRoomStore.getState()
 
     if (packet.type === 'message') {
         const msg = { ...packet.payload, roomId }
-        safeAdd(msg)
-        roomHistory.set(roomId, [...(roomHistory.get(roomId) ?? []), msg])
-        from?.send({ type: 'seen', payload: { messageId: packet.payload.id, username } })
-
-        if (isHost) relay(packet, roomId, from)
+        safeAdd(msg);
+        roomHistory.set(roomId, [...(roomHistory.get(roomId) ?? []), msg]);
+        if (isHost) relay(packet, roomId, from);
     } else if (packet.type === 'typing') {
         setTyping(roomId, packet.payload.username)
         const key = `${roomId}:${packet.payload.username}`
         clearTimeout(typingTimers.get(key))
         typingTimers.set(key, setTimeout(() => removeTyping(roomId, packet.payload.username), 1200))
         if (isHost) relay(packet, roomId, from)
-
     } else if (packet.type === 'history-request') {
-        from?.send({ type: 'history', payload: { roomId, messages: roomHistory.get(roomId) ?? [] } })
-
+        from?.send({ type: 'history', payload: { roomId, messages: roomHistory.get(roomId) ?? [] } });
     } else if (packet.type === 'history') {
-        packet.payload.messages.forEach(safeAdd)
+        packet.payload.messages.forEach(safeAdd);
     } else if (packet.type === 'room-info') {
-        const { updateRoom } = useRoomStore.getState();
-        updateRoom(roomId, { name: packet.payload.name });
+        const { updateRoom, addMember } = useRoomStore.getState()
+        updateRoom(roomId, { name: packet.payload.name })
+        packet.payload.members.forEach((m) => addMember(roomId, m))
+    } else if (packet.type === 'join') {
+        connUsers.set(from!, packet.payload.userId)
+        useRoomStore.getState().addMember(roomId, packet.payload)
+        if (isHost) relay(packet, roomId, from)
+    } else if (packet.type === 'leave') {
+        useRoomStore.getState().removeMember(roomId, packet.payload.userId)
+        if (isHost) relay(packet, roomId, from)
     }
-}
-
-const setupConnexion = (room: DataConnection, isHost: boolean) => {
-    const roomId = isHost ? room.provider.id : room.peer
-
-    roomConns.set(roomId, [...(roomConns.get(roomId) ?? []), room]);
-
-    room.on('data', (p) => onPacket(p as Packet, roomId, room, isHost));
-
-    room.on('close', () => {
-        roomConns.set(roomId, (roomConns.get(roomId) ?? []).filter((c) => c !== room))
-    });
-
-    room.on('open', () => {
-        room.send({ type: 'history-request', payload: { roomId } })
-    });
-
-    room.on('close', () => {
-        roomConns.set(roomId, (roomConns.get(roomId) ?? []).filter((c) => c !== room))
-
-        const remaining = roomConns.get(roomId) ?? []
-        if (remaining.length === 0 && !isHost) {
-            useRoomStore.getState().removeRoom(roomId)
-        }
-    });
 }
 
 export const RoomProvider = ({ children }: { children: React.ReactNode }) => {
@@ -112,31 +93,57 @@ export const RoomProvider = ({ children }: { children: React.ReactNode }) => {
 
         const room = client.connect(roomId);
 
+        roomConns.set(roomId, [...(roomConns.get(roomId) ?? []), room]);
+        room.on('data', (p) => onPacket(p as Packet, roomId, room, false));
+
         room.on('open', () => {
-            useRoomStore.getState().addRoom({ id: roomId, name: 'Loading..', isHosting: false });
-            setupConnexion(room, false);
+            const { username } = useUserStore.getState()
+            room.send({ type: 'join', payload: { userId: client.id, username } })
+
+            useRoomStore.getState().addRoom({ id: roomId, name: 'Loading..', isHosting: false })
+            room.send({ type: 'history-request', payload: { roomId } })
+        });
+
+        room.on('close', () => {
+            roomConns.set(roomId, (roomConns.get(roomId) ?? []).filter((c) => c !== room))
+            if ((roomConns.get(roomId) ?? []).length === 0) {
+                useRoomStore.getState().removeRoom(roomId)
+            }
         });
     }
 
     const hostRoom = (roomName: string) => {
-        const room = new Peer(crypto.randomUUID());
+        const room = new Peer(crypto.randomUUID())
 
         room.on('open', () => {
-            hostedPeers.set(room.id, room);
-            roomConns.set(room.id, []);
-            useRoomStore.getState().addRoom({ id: room.id, name: roomName, isHosting: true });
+            const { username } = useUserStore.getState()
+            hostedPeers.set(room.id, room)
+            roomConns.set(room.id, [])
+            useRoomStore.getState().addRoom({ id: room.id, name: roomName, isHosting: true })
+            useRoomStore.getState().addMember(room.id, { userId: client.id, username: username! })
         });
 
-        room.on('connection', (room) => {
-            room.on('open', () => {
-                room.send({
-                    type: 'room-info',
-                    payload: { name: roomName }
-                });
+        room.on('connection', (conn) => {
+            const roomId = room.id
+
+            roomConns.set(roomId, [...(roomConns.get(roomId) ?? []), conn])
+            conn.on('data', (p) => onPacket(p as Packet, roomId, conn, true))
+
+            conn.on('close', () => {
+                const userId = connUsers.get(conn) // ← conn, pas room
+                if (userId) {
+                    useRoomStore.getState().removeMember(roomId, userId)
+                    connUsers.delete(conn)
+                    relay({ type: 'leave', payload: { userId } }, roomId, conn)
+                }
+                roomConns.set(roomId, (roomConns.get(roomId) ?? []).filter((c) => c !== conn))
+            })
+
+            conn.on('open', () => {
+                const currentMembers = useRoomStore.getState().members[room.id] ?? [];
+                conn.send({ type: 'room-info', payload: { name: roomName, members: currentMembers } });
             });
-
-            setupConnexion(room, true);
-        });
+        })
     }
 
     const sendMessage = (content: string) => {
@@ -154,6 +161,7 @@ export const RoomProvider = ({ children }: { children: React.ReactNode }) => {
         }
 
         safeAdd(msg);
+        roomHistory.set(activeRoomId, [...(roomHistory.get(activeRoomId) ?? []), msg]);
 
         (roomConns.get(activeRoomId) ?? [])
             .filter((c) => c.open)
