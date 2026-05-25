@@ -8,11 +8,20 @@ interface Room {
     isHosting: boolean;
 }
 
+interface Call {
+    roomId: string;
+    from: string;
+    username: string;
+}
+
 export interface RoomStore {
     rooms: Room[];
     members: Record<string, Member[]>;
     activeRoomId: string | null;
     typingByRoom: Record<string, string[]>
+    activeCall: { roomId: string, peers: string[] } | null;
+    incomingCall: Call | null;
+    remoteStreams: Map<string, MediaStream>;
     addRoom: (room: Room) => void;
     updateRoom: (id: string, patch: Partial<Room>) => void;
     removeRoom: (roomId: string) => void;
@@ -21,13 +30,23 @@ export interface RoomStore {
     removeTyping: (roomId: string, username: string) => void;
     addMember: (roomId: string, member: Member) => void;
     removeMember: (roomId: string, userId: string) => void;
+    setIncomingCall: (roomId: string, payload: any) => void;
+    clearIncomingCall: () => void;
+    addRemoteStream: (peerId: string, stream: any) => void;
+    setActiveCall: (roomId: string, peers: string[]) => void;
+    addCallPeer: (userId: string) => void;
+    removeCallPeer: (userId: string) => void;
+    clearActiveCall: () => void;
 }
 
 export const useRoomStore = create<RoomStore>((set) => ({
     rooms: [],
     members: {},
     activeRoomId: null,
+    activeCall: null,
     typingByRoom: {},
+    incomingCall: null,
+    remoteStreams: new Map(),
     addRoom: (room) => {
         return set((s) => ({ rooms: [...s.rooms, room] }));
     },
@@ -78,5 +97,28 @@ export const useRoomStore = create<RoomStore>((set) => ({
                 [roomId]: (s.members[roomId] ?? []).filter((m) => m.userId !== userId)
             }
         }))
-    }
+    },
+    setActiveCall: (roomId: string, peers: string[]) => {
+        return set({ activeCall: { roomId, peers } })
+    },
+    addCallPeer: (userId: string) => {
+        return set((state) => ({
+            activeCall: state.activeCall
+                ? { ...state.activeCall, peers: [...state.activeCall.peers, userId] }
+                : null
+        }))
+    },
+    removeCallPeer: (userId: string) => {
+        return set((state) => ({
+            activeCall: state.activeCall
+                ? { ...state.activeCall, peers: state.activeCall.peers.filter((p) => p !== userId) }
+                : null
+        }))
+    },
+    clearActiveCall: () => set({ activeCall: null }),
+    setIncomingCall: (roomId, payload) => set({ incomingCall: { roomId, ...payload } }),
+    clearIncomingCall: () => set({ incomingCall: null }),
+    addRemoteStream: (peerId, stream) => set((state) => ({
+        remoteStreams: new Map(state.remoteStreams).set(peerId, stream)
+    }))
 }));

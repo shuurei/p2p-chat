@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useEffect } from 'react'
 import Peer, { type DataConnection } from 'peerjs'
 
 import { useClient } from './ClientContext'
@@ -23,12 +23,18 @@ export type Packet =
     | { type: 'room-info'; payload: { name: string, members: Member[] } }
     | { type: 'join'; payload: { userId: string; username: string } }
     | { type: 'leave'; payload: { userId: string } }
+    | { type: 'call-request'; payload: { from: string; username: string } }
+    | { type: 'call-declined'; payload: { from: string } }
 
 export interface RoomContextType {
     joinRoom: (roomId: string) => void;
     hostRoom: (roomName: string) => void;
     sendMessage: (content: string) => void;
+    startCall: (roomId: string) => void;
+    acceptCall: () => void
+    declineCall: () => void
     emitTyping: () => void;
+    hangUp: () => void;
 }
 
 const RoomContext = createContext<RoomContextType | null>(null);
@@ -40,6 +46,13 @@ const roomHistory = new Map<string, Message[]>()
 const seenMessages = new Set<string>()
 const typingTimers = new Map<string, ReturnType<typeof setTimeout>>()
 let typingCooldown: ReturnType<typeof setTimeout> | null = null
+let localStream: MediaStream | null = null
+
+const getLocalStream = async () => {
+    if (localStream) return localStream;
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    return localStream;
+}
 
 const safeAdd = (msg: Message) => {
     if (seenMessages.has(msg.id)) return
@@ -82,11 +95,80 @@ const onPacket = (packet: Packet, roomId: string, from: DataConnection | null, i
     } else if (packet.type === 'leave') {
         useRoomStore.getState().removeMember(roomId, packet.payload.userId)
         if (isHost) relay(packet, roomId, from)
+    } else if (packet.type === 'call-request') {
+        useRoomStore.getState().setIncomingCall(roomId, packet.payload);
+    } else if (packet.type === 'call-declined') {
+        useRoomStore.getState().removeCallPeer(packet.payload.from)
+        if ((useRoomStore.getState().activeCall?.peers.length ?? 0) <= 1) {
+            useRoomStore.getState().clearActiveCall()
+        }
     }
 }
 
 export const RoomProvider = ({ children }: { children: React.ReactNode }) => {
     const { client } = useClient()
+    const { addRemoteStream } = useRoomStore.getState();
+
+    useEffect(() => {
+        client.on('call', async (call) => {
+            const stream = await getLocalStream()
+            call.answer(stream)
+            call.on('stream', (remoteStream) => addRemoteStream(call.peer, remoteStream))
+        });
+    }, []);
+
+    const startCall = async (roomId: string) => {
+        const stream = await getLocalStream()
+        const { username } = useUserStore.getState()
+
+        useRoomStore.getState().setActiveCall(roomId, [client.id])
+
+            ; (roomConns.get(roomId) ?? []).forEach((conn) => {
+                conn.send({ type: 'call-request', payload: { from: client.id, username: username! } })
+                const call = client.call(conn.peer, stream)
+                call.on('stream', (remoteStream) => {
+                    useRoomStore.getState().addRemoteStream(conn.peer, remoteStream)
+                    useRoomStore.getState().addCallPeer(conn.peer)
+                })
+            })
+    }
+
+    const acceptCall = async () => {
+        const { incomingCall } = useRoomStore.getState()
+        if (!incomingCall) return
+        const stream = await getLocalStream()
+        const call = client.call(incomingCall.from, stream)
+        call.on('stream', (remoteStream) => {
+            useRoomStore.getState().addRemoteStream(incomingCall.from, remoteStream)
+            useRoomStore.getState().setActiveCall(incomingCall.roomId, [client.id, incomingCall.from])
+        })
+        useRoomStore.getState().clearIncomingCall()
+    }
+
+    const hangUp = () => {
+        localStream?.getTracks().forEach((t) => t.stop())
+        localStream = null
+
+        const { activeCall } = useRoomStore.getState()
+        if (!activeCall) return
+
+            ; (roomConns.get(activeCall.roomId) ?? [])
+                .filter((c) => c.open)
+                .forEach((c) => c.send({ type: 'call-declined', payload: { from: client.id } }))
+
+        useRoomStore.getState().clearActiveCall()
+        useRoomStore.getState().remoteStreams.forEach((_, peerId) => {
+            useRoomStore.getState().remoteStreams.delete(peerId)
+        })
+    }
+    const declineCall = () => {
+        const { incomingCall, clearIncomingCall } = useRoomStore.getState()
+        if (!incomingCall) return
+            ; (roomConns.get(incomingCall.roomId) ?? [])
+                .filter((c) => c.open)
+                .forEach((c) => c.send({ type: 'call-declined', payload: { from: client.id } }))
+        clearIncomingCall()
+    }
 
     const joinRoom = (roomId: string) => {
         if (useRoomStore.getState().rooms.find(({ id }) => id === roomId)) return;
@@ -180,7 +262,7 @@ export const RoomProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     return (
-        <RoomContext.Provider value={{ joinRoom, hostRoom, sendMessage, emitTyping }}>
+        <RoomContext.Provider value={{ joinRoom, hostRoom, sendMessage, emitTyping, startCall, acceptCall, declineCall, hangUp }}>
             {children}
         </RoomContext.Provider>
     )
