@@ -2,7 +2,7 @@ import { useRoomStore } from '../stores/roomStore'
 import { useRoom } from '../contexts/RoomContext'
 
 export default function CallNotification() {
-    const { incomingCall, clearIncomingCall } = useRoomStore()
+    const { incomingCall } = useRoomStore()
     const { acceptCall, declineCall } = useRoom()
 
     if (!incomingCall) return null
