@@ -15,7 +15,7 @@ export default function ChatArea() {
     const [copied, setCopied] = useState(false)
     const bottomRef = useRef<HTMLDivElement>(null)
 
-    const { sendMessage, emitTyping } = useRoom()
+    const { sendMessage, emitTyping, startCall } = useRoom()
     const { messages } = useChatStore()
     const { rooms, activeRoomId, typingByRoom, members } = useRoomStore()
 
@@ -44,14 +44,22 @@ export default function ChatArea() {
                         <div className="text-xs text-zinc-500">Vous hébergez cette room</div>
                     )}
                 </div>
-                {activeRoom?.isHosting && (
-                    <button
-                        onClick={copyRoomId}
-                        className="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg text-zinc-300 shrink-0"
-                    >
-                        {copied ? 'Copié !' : 'Partager l\'ID'}
-                    </button>
-                )}
+                <div className='flex gap-2'>
+                    {(activeRoomId && activeMembers.length > 0) && (
+                        <button
+                            onClick={() => startCall(activeRoomId)}
+                            className="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg text-zinc-300 shrink-0"
+                        >📞</button>
+                    )}
+                    {activeRoom?.isHosting && (
+                        <button
+                            onClick={copyRoomId}
+                            className="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg text-zinc-300 shrink-0"
+                        >
+                            {copied ? 'Copié !' : 'Partager l\'ID'}
+                        </button>
+                    )}
+                </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-linear-to-b from-zinc-950 to-zinc-900">
@@ -70,8 +78,8 @@ export default function ChatArea() {
                             className={`flex ${isMine ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2`}
                         >
                             <div className={`max-w-[70%] px-4 py-2 rounded-2xl text-sm shadow-md transition-all ${isMine
-                                    ? 'bg-violet-600 text-white rounded-br-md'
-                                    : 'bg-zinc-900 border border-zinc-800 rounded-bl-md'
+                                ? 'bg-violet-600 text-white rounded-br-md'
+                                : 'bg-zinc-900 border border-zinc-800 rounded-bl-md'
                                 }`}>
                                 {!isMine && (
                                     <div className={`text-xs mb-1 ${color.text}`}>
