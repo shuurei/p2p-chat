@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<title>P2P Chat</title>
+
+		<script>
+			const path = window.location.pathname.replace('/p2p-chat', '').replace(/^\//, '');
+			window.location.replace('/p2p-chat?' + path);
+		</script>
+	</head>
+</html>

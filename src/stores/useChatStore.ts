@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Message } from '../contexts/RoomContext';
+import type { Message } from '../contexts/room-context';
 
 export interface ChatStore {
 	messages: Message[];
