@@ -8,7 +8,7 @@ const now = new Date();
 
 // https://vite.dev/config/
 export default defineConfig({
-	base: '/p2p-chat',
+	base: '/p2p-chat/',
 	plugins: [
 		react(),
 		tailwindcss()
