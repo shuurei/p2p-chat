@@ -1,17 +1,40 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.tsx'
+import { createBrowserRouter, RouterProvider } from 'react-router'
 
-import { UserProvider } from './contexts/ClientContext.tsx'
-import { RoomProvider } from './contexts/RoomContext.tsx'
+import './index.css'
+
+import { ClientProvider } from './providers/client-provider'
+import { RoomProvider } from './providers/room-provider'
+
+import AuthLayout from './layouts/AuthLayout'
+import AppLayout from './layouts/AppLayout'
+
+import TextChannelPage from './pages/TextChannelPage'
+
+const router = createBrowserRouter([
+	{
+		path: '/auth/login',
+		element: <AuthLayout />
+	},
+	{
+		path: '/',
+		element: <AppLayout />,
+		children: [
+			{
+				path: '/channels/:roomId',
+				element: <TextChannelPage />
+			}
+		]
+	}
+], { basename: '/p2p-chat' });
 
 createRoot(document.getElementById('root')!).render(
 	<StrictMode>
-		<UserProvider>
+		<ClientProvider>
 			<RoomProvider>
-				<App />
+				<RouterProvider router={router} />
 			</RoomProvider>
-		</UserProvider>
+		</ClientProvider>
 	</StrictMode>
 );

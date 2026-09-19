@@ -28,5 +28,5 @@ export default function MessageInput({ onSend, onTyping }: MessageInputProps) {
                 Send
             </button>
         </form>
-    )
+    );
 }

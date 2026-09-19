@@ -1,13 +1,20 @@
-import { useState } from 'react'
-import { useUserStore } from '../stores/userStore'
+import { Navigate } from 'react-router'
+import { useUserStore } from '@/stores/useUserStore'
+import { useState } from 'react';
 
-export default function LoginScreen() {
-    const [usernameInput, setUsernameInput] = useState('')
-    const { setUsername } = useUserStore()
+export default function AuthLayout() {
+    const username = useUserStore((state) => state.username);
+
+    const [usernameInput, setUsernameInput] = useState('');
+    const setUsername = useUserStore((state) => state.setUsername);
 
     const handleSubmit = () => {
         if (!usernameInput.trim()) return
         setUsername(usernameInput)
+    }
+
+    if (username) {
+        return <Navigate to='/' replace />
     }
 
     return (
